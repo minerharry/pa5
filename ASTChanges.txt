@@ -1,0 +1,298 @@
+so... yeah. I've made a lot of changes. I think this should get 95% of them; I'm gonna leave out tiny things like constructor arguments / shortcuts
+Also to make this easier, I'm gonna separate my changes into three categories: Refactors, Removals, and Radditions
+
+First, refactors:
+1. Reference -> Expression
+miniJava is extremely limited in what objects you can assign to; essentially, only allowing dot syntax followed by a single index.
+Originally, I expanded this by allowing the references to chain indefinitely, but this only got me so far, and eventually I realized that the whole system 
+was broken altogether, because *you can assign to fields of the result of function calls*. This led me to realize that, in general, as long as the
+outermost expression was "assignable" (dot expression, index expression, or raw identifier), **any inner expressions can be assigned to**.
+This was the last straw for references, which were already somewhat redundant to expressions, so I removed them outright. Instead, I added an abstract
+method to the Expression node called isAssignable, for which the only assignable expressions are RefExpr (identifier), DotExpr (I renamed qualRef to better
+fit the fact that it now works for any expression, including methodCall().field), and IxExpr. A whole bunch of ASTs (statements and expressions) have been 
+updated to reflect this change.
+
+2. Declarations
+First, the fields in the base Declaration class were modified; each declaration now requries a "DeclKeywords" object, responsible for the 
+"public abstract @Nullable final default @Override synchronized static" etc. soup; see DeclKeywords in the Radditions section. Validation happens after
+Declaration creation to ensure the right keywords are on the right declarations. (I could think of no nice way to enforce this so I just make sure to do it
+whenever I create a declaration). ~~Additionally, the "name" field was removed, specifically for variables, which can have multi-declaration and multi-initialization 
+(see 2a. "Variables" below)~~. Finally, the inheritance structure was modified slightly; I changed the meaning of VarDecl from "Variable in method declaration" to
+"General variable declaration", which encompasses all declarations with the multi-initializer syntax. From VarDecl, FieldDecl and LocalDecl are direct subclasses,
+and then ParameterDecl from LocalDecl; besides some helper functions, none add extra functionality over VarDecl. I put ParameterDecl and LocalDecl together
+for scoping reasons, I figure that will be beneficial later (I haven't started identification when writing this [UPDATE: it was]). There are also some more specific
+declaration changes:
+--PA4 Update--
+All declarations now have an integer basePointerOffset. The meaning of this number is different in different contexts; for localdecls, it's the $rbp offset;
+for instance fields, it's the offset from the class's pointer; for static fields, it's the offset from the static class's pointer; for methods, it's the offset
+from the base instruction pointer (populated during final instructionlist assembly, used to patch calls); for outermost classmemberdecls, it's the offset of the
+static class's pointer from the start of the static allocation section.
+
+2a. Variables
+The key change for variable parsing is the multi-initializer syntax, e.g. int a,b=2,c,d=4,e=-2; A smart programmer would probably separate these into multiple
+single-variable declarations, and an even smarter one wouldn't be doing this at all, but I am me so I set variables to all take a List<> of Initializers,
+a helper data class that has a variable name and an optional initialization expression. Somewhat frustratingly, parameters can't have this multi_initialization,
+but I wanted to support default arguments, so I forced parameters to have the same internal structure but only have one initializer each, also with
+optional initialization. I also changed the hierarchy tree a little bit; because fields, local variables, and parameters all have essentially the same syntax -
+especially with the multi-initializer syntax - I changed VarDecl from meaning a local variable declaration to just any "variable" 
+--PA4 UPDATE--
+As predicted by my former self, this turned out to be a big issue - matching each variable with a list of declarations doesn't cut it for code generation. 
+vardecl has been turned into a single declaration, and all declarations are returned to having names (see stricken passage above). LocalDeclStmt
+now takes a list of localdecls; multiple fielddecls in a single line are expanded out to be multiple different members of a class.
+
+2b. Classes
+To support all types of classlikes (class, interface, enum, @interface annotation), created an abstract class ClassMemberDecl (that is, a member which is a class).
+The different class versions are essentially identical - they all have constructors (except interfaces), methods, fields (except interfaces), and nested classlikes.
+All classes also support a superclass and list of superinterfaces. (Parsing the @interface keyword was *really* annoying because you can have regular annotations
+before a class keyword, so my usual method of [parse DeclKeywords] [accept class/enum/interface keyword] wouldn't work because the DeclKeywords would take the @interface.
+I ended up using an exception based solution which is a little jank but works). There's also a ClassType enum for CLASS, INTERFACE, etc.
+--PA4 UPDATE--
+All ClassMemberDecls now have two extra decorations populated during code generation, int instanceSize and int staticSize. After the offsets for each instance
+and static fields are determined, their sum is put into these fields to make mallocs simpler during code gen.
+
+2c. ClassMembers
+Since fields, methods, constructors, and nested classlikes, are all quite similar (and often need to be referred to as a group), created an interface MemberDecl
+that has a few convenience methods. This is particularly important as the return type of parseMember, since the various members are not LL(1) unambiguous.
+Since I kind of have the pipe dream of the compiler compiling itself, I needed to not rely on casting, so it has an as[membertype] for field, method, classlike, etc.
+There's also a MemberType enum for METHOD, FIELD, CLASSLIKE, etc. Enums have their own special classmember as well, the EnumElement.
+--PA4 update--
+All Classmembers have a convenience function getStaticOffset() which adds the static offsets of each of their enclosing declarations, so it's one step from the
+static class section pointer to that particular static variable. MethodDecls also have a decoration for the first instruction generated for them,
+so a Call() instruction can take a member decl and patch itself to jump to that instruction once the instructionlist has been assembled
+
+
+3. CallExpr
+To make type vs expression parsing easier, I changed callExpr to work like dotExpr, with an expression and an identifier methodname. This more strictly enforces
+that each method is specifically Object.method() and not just, say, (A + B) (). To be fair, the CallExpr(Expression, args) is a more elegant solution in a functional 
+programming language where any object could potentially be callable [which, to be clear, is how all lanugages should be :), python my beloved]; I did it this way because 
+I knew I would probably forget to make the proper checks that come with such an encumbered lanuage so I just made it so I couldn't mess it up.
+--PA4 UPDATE--
+Both Call expressions and IdRefs now have an extra decoration: a ClassMemberDecl context. This is because as always unqualified references 
+are the source of all evil. To make code generation easier, these are populated during type checking to have the class definition the 
+expression is encountered in to propery inject a "this". I suppose I could remove unqualified references during type checking...
+
+4. Identifier
+For identification: identifiers now have a refDecl field which associates identifiers with a declaration, set during scoped identification. However,
+not all identifiers are set; of course, some are the identifiers in declarations themselves and so obviously won't have a reference declaration, but
+even more importantly: **with general expressions instead of references, qualified identification is impossible without typing**. This is because of 
+anonymous qualified reference: in the case of methodCall().field, I need to know the return type of methodCall() to know what declaration .field is 
+referring to. This leads directly to #5:
+
+5. TypeDenoter
+Much like identifiers have declarations, all TypeDenoters now have typedeclarations. Unlike identifier refDecls, they are ClassMemberDecls, because 
+type declarations are classes / interfaces / etc. The good thing about type checking is that unlike sccoped identification, the declaration for identfier 
+b in A.b can only be in one place - A's ClassMemberDecl. Thus, ClassMemberDecl has a method findMember which searches* the various members for 
+members matching b, so the declaration for A.b is A.type.typeDeclaration.findMember(b). It turns out that because of java's aforementioned encumbrance,
+static variables and nested types ([Class].[Class].field) get a little annoying; what is the "Type" of [Class]? In python it would be a Type; I used
+a wrapper of TypeDenoter with a subclass for [Class] types with a custom findMember that only returns static members of the original class decl. This
+turned out to be really annoying, for next PA I'm just going to add another TypeDenoter for classes that can't be instantiated in code.
+*searching also turns out to be really annoying, because it turns out that **classes in java can have nested classes with the same name as field/methods**.
+(Which I really hate). This means that when searching a class declaration for a member, I have to specify if I'm looking for a type, and if so skip the 
+non-type members. Of course, since ([Class].[Class].field) is an expression, I have to be able to accept both types and non-types during expression
+qualified typing, but this is also the java behavior - first look for expression, then type, and if the final .a is a type throw an error.
+--POST-PA3-UPDATE--
+When doing type checking, I really really really didn't like my implementation for static types, which essentially was me adding a wrapper
+for static types that only let through the static methods of the underlying type. This kinda worked, but it sucked. Reflecting on my experience
+in python, I realized the main reason why - and how to fix it - was that really, static references work a lot like instance references, it's just 
+that instead of the instance being the source, it's the class declaration itself. In python, this is directly represented, with classes
+themselves directly being code-manipulable objects. In java, such objects don't exist in code (reflection doesn't count). However, 
+there's no reason it couldn't exist in my ASTs! So, I created a StaticType class, which is a TypeDenoter wrapper with all the same
+functionality. TypeDenoter now also has a getMember() method (there're some specifics in the code if you really care) which allows different
+types to provide different member-access functionality (which will be how ArrayType gets .length for pa5). In StaticType, this is implemented
+to only allow returning static members and erroring otherwise.
+--PA4 UPDATE--
+All TypeDenoters now have a method getTypeSize(), which represents the size of their representation as a field or on the stack. For now this is always 8
+since I haven't implemented size-specific push/pop.
+
+6. CallStmt
+In regular java, there are more than one expressions that can exist on their own; of the expressions I implemented (I think it's all of them?), increment (i++),
+new Object(), and methodCalls() are all "stateable". One could argue that the assignment expression (a=b)=c etc is stateable, but for type or expression 
+ambiguous parsing reasons I do have a special statement for assignment. For the other three stateable expression, though, I just made a new expression
+ExprStmt which is just a statement of a stateable expression.
+
+MISC AST stuff:
+
+a. repr
+Added a simple repr() method to all ast nodes, like toString but made to be simple and human-readable (and always include the sourceposition so I can see where to go)
+
+b. ASTDisplay
+Added display methods for all the new nodes, and updated the old ones for new parameters (e.g. constructors and nested classes, etc);
+
+c. Terminal.fromToken, Modifier.fromToken, Protection.fromToken
+static "constructors" that use the tokentype to make a proper instance of the class (with the token's source position)
+
+d. BaseType
+Renamed to PrimitiveType because I like the name more /shrug
+
+e. ClassType
+Renamed to IdentifierType because there ambiguity with the enum I wanted to make called ClassType b/w interfaces, classes, enums, etc
+
+--PA4 Update--
+f. Package
+The package now has a MethodDecl mainMethod. At the moment, this is populated during type checking by finding the only valid mainmethod,
+but I want to add a compiler argument to specify the entrypoint
+
+--PA4 Update--
+7. Expressions
+Expressions now have a TypeDenoter returnType which is populated during typechecking; this essentially saves the work that the typechecker is doing
+into the structure of the tree itself. This is useful during code generation most explicitly for indexexpressions, where we need to know 
+the type of the array in order to get the proper multiplier. One might ask why this isn't necessary for, say, dotexpr; in dotexpr, the identifier
+was already identified to a declaration inside the type, so it knows what it is I don't know if it's needed for anything else but it's nice to have
+
+
+
+Then, Removals: (not many, mostly just changes above)
+1. References
+Like mentioned above, references as a concept were wholly removed. (ThisRef and IdRef kept their names, but were converted to the leaf nodes in expressions).
+
+2. [X]List
+I changed most instances of [X]List classes to just List<X> because I was getting fed up with the syntax. Not sure why I did that but I did. One exception is ModifierList; 
+since Modifiers and Protections (see DeclKeywords below) are AST objects with an associated ModifierType, and usually we want to know if the *type*
+is in the list, I added a convenience method to ModifierList containsType() to search for the type in the list. Could also have changed the Modifier .equals() method.
+
+3. IxAssignStmt
+Since you can assign to arbitrary Expressions (as long as they isAssignable), this statement is not necessary - just an AssignStmt [IxExpr, Expr]
+
+4. RefExpr
+Since references are expressions, this class isn't necessary. This behavior is superceded by recursive DotExpr [IdRef, {name}] or DotExpr [DotExpr[IDRef, {q1}], {q2}]
+
+
+Finally, Radditions (the big one):
+(Yes, Radditions. I commit to my bits.)
+
+1. DeclKeywords
+It turns out that pretty much all declarations in java (local variables, parameters, fields, methods, classes, even enum elements) have the same 
+parsing of protection keywords, modifiers (static abstract default etc), and annotations like @Override, @Nullable, @ExampleAnnotation(p1 = true), etc. 
+So every declaration now takes a DeclKeywords object, which has a protection, a list of modifiers, and a list of annotations.
+
+1a. Protection, Modifier
+Classes that represent a protection or a modifier token; made from a token, use the token's spelling to set the type.
+
+1b. Annotations
+Annotations have strange syntax; can be any identfier @id or @id(key1=value1), etc. No idea how these actually works, may skip implementing them
+in codegen. For now, just need that they connect to an AnnotationDecl.
+
+1c. Validation
+DeclKeywords comes with a validate() function that takes a declaration and returns that declaration, but throws an error if the keywords are wrong. it
+uses a whole bunch of different contexts (like what body the declaration is in) to determine what keywords are valid; e.g. parameters can't have keywords,
+but can have annotations, enums can't be anything other than public (but enum constructors can only be private), interface methods must be abstract or default
+(but not both), etc, etc. Lots of spaghetti logic.
+
+
+2. For and Foreach
+PA5 early: For loop implementation. Also did Foreach for kicks, which... was quite annoying to do.
+2a. For
+For is actually surprisingly tricky; one statement for initialization, one executed each loop, and a conditional expression - but it turns out
+there are actually quite a few restrictions on what statements are valid for initialization and execution. I just looked them up.
+
+2b. Foreach
+Foreach seems simpler than for, just for(type id : expression). The issue is that type id is also the starter for a statement in the for loop. I ended up
+adding an extra node, the ForEachDummy, which is a statement that can be returned by parseStatement() when requested with an optional argument. In
+for-loop parsing, I just return a for loop if the returned statement is a ForEachDummy.
+
+3. Do-While Stmt
+Nothing much special, just the While loop in reverse with an extra keyword.
+
+4. Switch/case
+Switch case statement; mostly annoying because of enums, since on an enum type you give the unqualified name in the case statement
+
+4a. switch target
+Can be any expression, but type must be a primitive, string, or enum type
+
+4b. case blocks
+target is a terminal: either a literal or an id representing an unqualified enum type. Case blocks actually have an interesting behavior since
+they fall through without a break; Because I was feeling funky ig I implemented this as a linked list. I suspsect this will be more natural for codegen
+since it's pretty much just as sequential anyway.
+
+5. Try/Catch/Finally
+Pretty simple, just blockstmt for try, (potentially empty) list of catchblocks, and potentially nonexistant finally blockstmt
+a. catch blocks
+Catchblocks are just a parameterdecl since that's essentially what SyntaxError e is (but we don't allow initializing) and a blockstmt
+
+6. ThrowStmt
+throw [expression]
+
+7. break/continue
+just keywords
+
+8. DotExpr
+Version of QualRef; expression base and identifier name
+
+9. IncExpr
+Takes an operator (either ++ or --) and has a flag for prefix or postfix increment. Stateable expression.
+
+10. TernaryExpr
+ternary syntax: Expression ? Expression : Expression. Not sure how to do type checking since the value expressions can have different types??
+
+11. MethodRefExpr
+[Expression]::methodname
+
+12. Constructors
+Essentially just methods with void return type and special return name. If parenthese parsed after type, if type is IdType and matches classname,
+it's a constructor. After that same as method.
+
+13. Enums
+Enums are pretty much classes but with very stringent rules on keywords and the extra section at the beginning of the declaration. Parses a
+comma-separated list of enum elements, then optionally semicolon, and if semicolon then all the other classmembers
+a. EnumElement
+EnumElements have their own special syntax, a name followed by a constructor call. As mentioned above, they can also have annotations, so DeclKeywords
+parsing is necessary.
+b. EnumType
+Enums are also a little weird because each enum field has... "the type" of the overarching class? made a new TypeDenoter EnumType, though I 
+haven't finished enum typechecking so this may change.
+
+14. Ellipsis Types (varargs)
+in methods, you can have (int... a) parameters for variadic arguments. Type followed by ellipsis is an EllipsisType. Dunno how to do method overloading,
+so I guess I'll fix this then too.
+
+15. QualType
+Since we can have nested types, we need chained type syntax. Takes an underlying type and an identifier name.
+
+16. AnnotatedType (PARTIAL IMPLEMENTATION)
+So it turns out that types themselves can be annotated too in java, who knew? I didn't. Not fully implemented, might kill during codegen.
+
+17. Generics
+Java generics are super important! the syntax can be a little involved sometimes though.
+
+a. Generic Classes/Methods
+Both classes and methods can be generic; methods are <K1,K2,...> returntype methodname(), classes are class name<K1,K2,...>. In both cases, they have
+a list<GenericVar> representing the types declared for that method/class. GenericVar is actually a declaration, because it has to be connected during 
+identification (and can have annotations), and since you can say <R, V extends R> and the like, it has a list of supertypes along with it. 
+
+b. Generic Types
+Generic types are the instantiation of generic methods; GenericType takes a type and a list of type denoters to make [Type]<Integer,String>.
+
+17. Extra Primitives
+Added float, double, char, and null
+
+18. Extra Literals
+Added float, char, and null (I should double check scanning for the 1.0f syntax)
+a. Array Literals
+Also added array literal parsing; just {Expression,Expression,...}. Not sure how to do typechecking tbh.
+
+19. TypeOrExpression
+For type and expression parsing, it is potentially possible to simply not know if the result is a type or an expression. Since the method has to return one thing,
+made an interface TypeOrExpression and some cast methods asExpression() and asType(). AmbiguousTypeOrExpression handles the case where the type is ambiguous
+(like A.B.C; if followed by an expression, it's a type, otherwise it's an expression). It just has candidate objects for both possibilities.
+
+20. File Header
+Since I've also been testing running my code on the compiler itself, I need to parse File headers (package and imports);
+a. PackageDecl
+src.miniJava.SyntacticAnalyzer; just list of ids
+b. Import "Statement"
+Not a statement implementer, just a list of ids with potentially a star (boolean flag) for import java.util.*;
+
+
+--PA4 Update--
+21. Syscall Statement
+I swear I heard somewhere a really nice, elegant way to include custom code to do i/o. But I have no idea what that was, so here's my own.
+New statement: Syscall Statement; can take list of arguments (expressions) like a regular call expression, but no return type (for now). Will probably make this an expression
+if I want to do I/O. There are potentially many types of syscall statements (has an enum for it), currently only type is PrintLn.
+Note that "Syscall" is not syscall in the instruction sense; more like Java calling *it's* system, through the compiler/standard library, which then usually (but not always!)
+will translate into an appropriate syscall instruction.
+**SYSCALL IS AN UNPARSEABLE STATEMENT**. It can only be created by injection by the compiler. This means it doesn't have to follow any of the normal rules, which is nice.
+When the compiler creates the dummy PrintStream class, the method .println() is a real method with an argument (int obj) and no return type; it has one statement, Syscall(obj),
+which evaluates the syscall on that object. I may change this system, as there are pros/cons with it, but at least for now it's very elegant imo.
+Note that I made println a real method with a syscall, instead of converting every System.out.println() method call *into* a syscall. This might be an optimization I do later,
+but System.out.println, being a series of dotexpressions in my version of minijava (not a single qualref), means that it's much harder to pattern-match and replace.
+
