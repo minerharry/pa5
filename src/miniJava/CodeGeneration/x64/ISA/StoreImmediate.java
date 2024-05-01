@@ -4,6 +4,7 @@ import miniJava.AbstractSyntaxTrees.AST;
 import miniJava.CodeGeneration.x64.Instruction;
 import miniJava.CodeGeneration.x64.RByte;
 import miniJava.CodeGeneration.x64.x64;
+import miniJava.CodeGeneration.x64.Reg.RegSize;
 
 public class StoreImmediate extends Instruction {
 	// Mov_i_to_rm
@@ -14,7 +15,7 @@ public class StoreImmediate extends Instruction {
 		byte[] modrmsibBytes = modrmsib.getBytes();
 		importREX(modrmsib);
 		
-		if( x64.isOneByte(imm) && modrmsib.IsRegRM_R8() ) {
+		if( x64.isOneByte(imm) && modrmsib.getSize() == RegSize.m8 ) {
 			// mov rm8, imm8
 			opcodeBytes.write(0xC6);
 			x64.writeBytes(immBytes,modrmsibBytes);

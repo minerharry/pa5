@@ -1,5 +1,6 @@
 package miniJava.ContextualAnalysis;
 import java.lang.reflect.Member;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
 
@@ -7,6 +8,7 @@ import miniJava.CompilerError;
 import miniJava.AbstractSyntaxTrees.*;
 import miniJava.AbstractSyntaxTrees.ClassMemberDecl.ClassType;
 import miniJava.AbstractSyntaxTrees.MemberDecl.MemberType;
+import miniJava.AbstractSyntaxTrees.SwitchStmt.SwitchType;
 import miniJava.AbstractSyntaxTrees.Package;
 import miniJava.SyntacticAnalyzer.SourcePosition;
 import miniJava.SyntacticAnalyzer.Token;
@@ -62,7 +64,7 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
     }
 
     @Override
-    public TypeResult visitPackageDecl(PackageDecl packageDecl, TypeContext arg) {
+    public TypeResult visitPackageDecl(PackageReference packageDecl, TypeContext arg) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'visitPackageDecl'");
     }
@@ -168,12 +170,7 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
         return null;
     }
 
-    @Override
-    public TypeResult visitEnumElement(EnumElement el, TypeContext arg) {
-        //each enum element is a constructor call! use same logic as newobjectexpr, extract to method perhaps
-        //TODO:
-        return null;
-    }
+    
 
     @Override
     public TypeResult visitFieldDecl(FieldDecl fd, TypeContext arg) {
@@ -187,8 +184,16 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
 
     @Override
     public TypeResult visitConstructorDecl(ConstructorDecl cd, TypeContext arg) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'visitConstructorDecl'");
+        List<TypeResult> throwTypes = visitList(cd.throwsList, arg);
+        visitList(cd.parameters,arg); //initializer validation
+        arg.returnType = TypeResult.VOID;
+        arg.throwTypes = throwTypes;
+        arg.memberKeywords = cd.keywords;
+        visitList(cd.statementList, arg);
+        arg.returnType = null;
+        arg.throwTypes = null;
+        arg.memberKeywords = null;
+        return TypeResult.VOID;
     }
 
     @Override
@@ -344,7 +349,7 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
     @Override
     public TypeResult visitThrowStmt(ThrowStmt throwStmt, TypeContext arg) {
         TypeResult throwType = throwStmt.exp.visit(this,arg);
-        if (!(arg.throwTypes.contains(throwType))){
+        if (!(arg.throwTypes.contains(throwType))){ //TODO: ALSO ALLOW TRY/CATCH TO CATCH THESE
             throw new TypeError("Error type " + throwType + " not declared in method signature");
         }
         return throwType;
@@ -427,9 +432,24 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
         TypeResult switchType = stmt.target.visit(this,arg);
 
         //TODO: Type validation on what kind of types can appear here?
-        if (!(switchType.getType() instanceof PrimitiveType 
-                || switchType.getType().typeDeclaration.getClassType() == ClassType.ENUM 
-                || switchType.equals(TypeResult.STRING))){
+        if (switchType.getType() instanceof PrimitiveType){
+            switch (switchType.getType().typeKind) {
+                case INT:
+                    stmt.switchType = SwitchType.INT;
+                    break;
+                case CHAR:
+                    stmt.switchType = SwitchType.CHAR;
+                    break;
+                //if implementing sized ints, add more here 
+
+                default:
+                    throw new TypeError("Switch constant targets must be integers or integer-like");
+            }
+        } else if (switchType.getType().typeDeclaration.getClassType() == ClassType.ENUM){
+            stmt.switchType = SwitchType.ENUM;
+        } else if (switchType.equals(TypeResult.STRING)) {
+            stmt.switchType = SwitchType.STRING;
+        } else {
             throw new TypeError("Switch targets must be primitive, enum, or String!");
         }
 
@@ -582,14 +602,6 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
             //qualified method call
             TypeResult base = expr.baseExp.visit(this,arg);
             methDecl = base.getMember(expr.methodName);
-
-            //qualified: check access!
-            if (methDecl.asDeclaration().isPrivate()){
-                if (!arg.within(methDecl)){
-                    throw new TypeError("Cannot access private member " + expr.methodName.repr() + " from outside class " + base.repr());
-                }
-            }
-
         } else {
             Declaration dec = expr.methodName.refDecl;
             if (dec.isMember()){
@@ -598,7 +610,6 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
                 throw new TypeError("Identifier " + expr.methodName + " is not callable");
             }
         }
-
         
         MethodDecl method;
         if (methDecl.getMemberType() == MemberType.METHOD){
@@ -606,36 +617,79 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
         } else {
             throw new TypeError("Member " + expr.methodName.refDecl + " is not a method");
         }
-
-        expr.methodName.refDecl = method;
-
-        //verify parameters match!
-        List<TypeResult> paramTypes = visitList(method.parameters,arg);
-        List<TypeResult> argTypes = visitList(expr.argList,arg);
-
-        if (argTypes.size() > paramTypes.size()){
-            throw new TypeError("Too many arguments for method " + method + "; expected " + paramTypes.size() + ", got " + argTypes.size());
+        
+        //SELECT THE OVERLOADED METHOD / VERIFY PARAMETERS!
+        List<MethodDecl> meths = (method instanceof OverloadedMethod ? ((OverloadedMethod<MethodDecl>)method).methods : new OverloadedMethod<>(method, null).methods);
+        method = this.validateMethodCall(meths, expr.argList, arg);
+        if (method == null){ //bad
+            throw new TypeError("Could not find method matching parameter pattern");
         }
-        for (int i = 0; i < paramTypes.size(); i++){
-            if (i >= argTypes.size()){
-                if (method.parameters.get(i).isDefault()){
-                    //default parameter, doesn't need argument
-                    //realistically, this could be break, since all parameters after should be default,
-                    // but making sure *every* parameter is default is good for my sanity and is easy enough
-                    continue; 
-                } else {
-                    throw new TypeError("Missing non-default parameter " + method.parameters.get(i));
+
+        //AT THIS POINT THE METHOD WILL HAVE BEEN DETERMINED AND *NOT* AN OVERLOADED METHOD
+        if (expr.baseExp != null){
+            //qualified: check access!
+            if (method.isPrivate()){
+                if (!arg.within(methDecl)){
+                    throw new TypeError("Cannot access private member " + expr.methodName.repr() + " from outside class " + expr.baseExp.returnType.typeDeclaration.repr());
                 }
-            }
-            checkCompatible(paramTypes.get(i),argTypes.get(i),expr.posn);
+            }            
+        }
+
+        if (method instanceof OverloadedMethod){
+            throw new UnsupportedOperationException("method choosing unsuccessful");
         }
         
+        expr.methodName.refDecl = method;
         return expr.setType(method.type.visit(this,arg)); //this can potentially visit the same method's return type multiple time but like oh well
     }
 
     @Override
     public TypeResult visitLiteralExpr(LiteralExpr expr, TypeContext arg) {
         return expr.setType(expr.lit.visit(this,arg));
+    }
+
+
+    public <R extends MethodDecl> R validateMethodCall(List<R> candidates, ExprList args, TypeContext arg){
+        //verify parameters match!
+        List<TypeResult> argTypes = visitList(args,arg);
+        
+        R method = null;
+
+        for (R cand : candidates){
+            List<TypeResult> paramTypes = visitList(cand.parameters, arg);
+            if (argTypes.size() > cand.parameters.size()){
+                continue;
+            }
+            boolean fail = false;
+            for (int i = 0; i < paramTypes.size(); i++){
+                if (i >= argTypes.size()){
+                    if (cand.parameters.get(i).isDefault()){
+                        //default parameter, doesn't need argument
+                        //realistically, this could be break, since all parameters after should be default,
+                        // but making sure *every* parameter is default is good for my sanity and is easy enough
+                        continue; 
+                    } else {
+                        // throw new TypeError("Missing non-default parameter " + method.parameters.get(i));
+                        fail = true;
+                        break;
+                    }
+                } else {
+                    try {
+                        checkCompatible(paramTypes.get(i),argTypes.get(i),cand.parameters.get(i).posn);
+                    } catch (TypeError e) {
+                        fail = true;
+                        break;
+                    }
+                }
+            }
+            if (!fail){
+                if (method != null){
+                    throw new TypeError("Ambiguous method call!");
+                }
+                method = cand;
+            }
+        }
+        return method; //if constructor, this is fine if args is size 0; in methods, this is never fine. handled by caller
     }
 
     @Override
@@ -659,11 +713,28 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
             }
             return expr.setType(objType);
         }
-        for (ConstructorDecl c : decl.constructors){
-            //pass
-        }
-        return null; //TODO: figure out method overloading (also applies to methods!)
 
+        //otherwise, match the constructor to its rightful place:
+        ConstructorDecl cd = validateMethodCall(decl.constructors, expr.args, arg);
+        expr.constructor = cd;
+        if (cd == null && expr.args.size() != 0){ //bad
+            throw new TypeError("Could not find constructor matching parameter pattern");
+        }
+
+        return expr.setType(objType);
+
+    }
+
+    @Override
+    public TypeResult visitEnumElement(EnumElement el, TypeContext arg) {
+        //each enum element is a constructor call! use same logic as newobjectexpr, extract to method perhaps
+        EnumDecl parent = el.parent.parent;
+        ConstructorDecl cd = validateMethodCall(parent.constructors,el.args, arg);
+        el.constructor = cd;
+        if (cd == null && el.args.size() != 0){ //bad
+            throw new TypeError("Could not find constructor matching parameter pattern");
+        }
+        return null;
     }
 
     @Override
@@ -849,6 +920,31 @@ public class TypeChecker implements Visitor<TypeContext,TypeResult> {
                 break;
         }
         return null; //statements don't have a return type
+    }
+
+    @Override
+    public TypeResult visitProgram(Program program, TypeContext arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitProgram'");
+    }
+
+    @Override
+    public TypeResult visitOverloadedMethod(OverloadedMethod overloadedMethod, TypeContext arg) {
+        visitList(overloadedMethod.methods, arg);
+        return null;
+    }
+
+    @Override
+    public TypeResult visitInstanceOf(InstanceOfExpression instanceOfExpression, TypeContext arg) {
+        TypeResult expType = instanceOfExpression.expr.visit(this,arg);
+        StaticType classType = (StaticType)instanceOfExpression.type.visit(this,arg).getType();
+
+        //TODO: this is fucked
+        //Check that expType is a superclass of classType. If not, mark the expression as redundant or throw an error
+        
+
+        return TypeResult.BOOLEAN;
+        
     }
     
 }

@@ -1,6 +1,7 @@
 package miniJava.CodeGeneration.x64.ISA;
 
 import miniJava.CodeGeneration.x64.RByte;
+import miniJava.CodeGeneration.x64.Reg8;
 import miniJava.AbstractSyntaxTrees.AST;
 
 /**MR mode - computes second (RegR) minus first (RM) and stores flags like SUB does

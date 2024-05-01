@@ -181,6 +181,7 @@ but can have annotations, enums can't be anything other than public (but enum co
 
 2. For and Foreach
 PA5 early: For loop implementation. Also did Foreach for kicks, which... was quite annoying to do.
+
 2a. For
 For is actually surprisingly tricky; one statement for initialization, one executed each loop, and a conditional expression - but it turns out
 there are actually quite a few restrictions on what statements are valid for initialization and execution. I just looked them up.

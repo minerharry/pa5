@@ -16,7 +16,6 @@ import java.util.List;
 import miniJava.SyntacticAnalyzer.Parser;
 import miniJava.SyntacticAnalyzer.Scanner;
 import miniJava.SyntacticAnalyzer.Token;
-import miniJava.SyntacticAnalyzer.TokenType;
 import miniJava.AbstractSyntaxTrees.*;
 import miniJava.AbstractSyntaxTrees.Package;
 import miniJava.CodeGeneration.CodeGenerator;
@@ -174,7 +173,7 @@ public class Compiler {
 				//  then output the errors
 				if (reporter.hasErrors()){
 					System.out.println("Error");
-					if (verbose) reporter.outputErrors(true);
+					if (verbose) reporter.outputErrors();
 					any_fail = true;
 					// break;
 				} else {

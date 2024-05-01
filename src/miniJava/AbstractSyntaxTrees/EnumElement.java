@@ -6,6 +6,9 @@ public class EnumElement extends Declaration implements MemberDecl {
 
     public ExprList args;
     public EnumType parent;
+    public int enumIndex;
+
+    
 
     public EnumElement(DeclKeywords keywords, EnumType parent, Identifier name) {
         super(keywords,parent,name,name.posn);
@@ -51,4 +54,9 @@ public class EnumElement extends Declaration implements MemberDecl {
 	public void setEnclosingDecl(ClassMemberDecl cmd) {
 		throw new UnsupportedOperationException("nuh uh");
 	}
+
+    public static final int valueOffset = 8; //for codegen purposes
+
+    //potentially null if no constructor
+    public ConstructorDecl constructor;
 }

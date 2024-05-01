@@ -37,4 +37,7 @@ public class NewObjectExpr extends NewExpr
     public String repr() {
         return "New object expression at position " + posn;
     }
+
+    //if a consturctor exists, decorated by type checking. could be null!
+    public ConstructorDecl constructor;
 }

@@ -8,7 +8,16 @@ public enum Reg8 implements Reg {
 	AH(4),
 	CH(5),
 	DH(6),
-	BH(7);
+	BH(7),
+	R8B(8),
+	R9B(9),
+	R10B(10),
+	R11B(11),
+	R12B(12),
+	R13B(13),
+	R14B(14),
+	R15B(15);
+
 	
 	public final int idx;
 	private Reg8(int idx) {

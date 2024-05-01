@@ -75,20 +75,73 @@ public class StaticInitializer implements Visitor<Object,InstructionList> {
 		//I don't think static methods will have data to be stored? I suppose we could store the pointers but that seems unnecessary
         //Register static class location
     
-        //Allocate **STATIC** fields, classmember pointers
-        int offset = 0;
+        //initialize offsets for instance and static class offsets
+        int staticOffset = 0;
+        int instanceOffset = 8; //leave space for the static class pointer
 		for (FieldDecl fd : cd.fields){
-			if (!fd.isStatic()){ continue; }
-            fd.basePointerOffset = offset;
-            offset += fd.type.getTypeSize();
+			if (fd.isStatic()){
+                fd.basePointerOffset = staticOffset;
+                staticOffset += fd.type.getTypeSize();
+            } else{
+                fd.basePointerOffset = instanceOffset;
+                instanceOffset += fd.type.getTypeSize();
+            }
 		}
         for (ClassMemberDecl cmd : cd.classmembers){
-            if (!cmd.isStatic()){ continue; }
-            cmd.basePointerOffset = offset;
-            cmd.visit(this,arg);
-            offset += cmd.staticSize;
+            if (cmd.isStatic()){ 
+                cmd.basePointerOffset = staticOffset;
+                cmd.visit(this,arg);
+                staticOffset += cmd.staticSize;
+            } else{
+                //no instance class declarations
+            }
+            
         }
-        cd.staticSize = offset;
+        cd.staticSize = staticOffset;
+        cd.instanceSize = instanceOffset;
+
+
+        //NOTE: THIS DOES NOT INITIALIZE ANY MEMORY. 
+        //Instead, this is establishing the *TEMPLATE* for these classes
+
+        return code;
+    }
+
+    @Override
+    public InstructionList visitEnumDecl(EnumDecl ed, Object arg) {
+        InstructionList code = new InstructionList();
+
+        //now we need to make space for (and instantiate!) all the static fields and classmembers. 
+		//I don't think static methods will have data to be stored? I suppose we could store the pointers but that seems unnecessary
+        //Register static class location
+    
+        //initialize offsets for instance and static class offsets
+        int staticOffset = 0;
+        int instanceOffset = 8 + EnumElement.valueOffset; //leave space for the static class pointer and the int value of the enum
+        for (EnumElement el : ed.elements){ //the elements are static members
+            el.basePointerOffset = staticOffset;
+            staticOffset += 8; //these are all pointers which must be statically initialized!
+        }
+		for (FieldDecl fd : ed.fields){
+			if (fd.isStatic()){
+                fd.basePointerOffset = staticOffset;
+                staticOffset += fd.type.getTypeSize();
+            } else{
+                fd.basePointerOffset = instanceOffset;
+                instanceOffset += fd.type.getTypeSize();
+            }
+		}
+        for (ClassMemberDecl cmd : ed.classmembers){
+            if (cmd.isStatic()){ 
+                cmd.basePointerOffset = staticOffset;
+                cmd.visit(this,arg);
+                staticOffset += cmd.staticSize;
+            } else{
+                //no instance class declarations
+            }
+        }
+        ed.staticSize = staticOffset;
+        ed.instanceSize = instanceOffset;
 
 
         //NOTE: THIS DOES NOT INITIALIZE ANY MEMORY. 
@@ -105,7 +158,7 @@ public class StaticInitializer implements Visitor<Object,InstructionList> {
     }
 
     @Override
-    public InstructionList visitPackageDecl(PackageDecl packageDecl, Object arg) {
+    public InstructionList visitPackageDecl(PackageReference packageDecl, Object arg) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'visitPackageDecl'");
     }
@@ -146,11 +199,7 @@ public class StaticInitializer implements Visitor<Object,InstructionList> {
         throw new UnsupportedOperationException("Unimplemented method 'visitAnnotationDecl'");
     }
 
-    @Override
-    public InstructionList visitEnumDecl(EnumDecl enumDecl, Object arg) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'visitEnumDecl'");
-    }
+
 
     @Override
     public InstructionList visitInterfaceDecl(InterfaceDecl interfaceDecl, Object arg) {
@@ -480,6 +529,24 @@ public class StaticInitializer implements Visitor<Object,InstructionList> {
     public InstructionList visitSyscallStmt(SyscallStmt syscallStmt, Object arg) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'visitSyscallStmt'");
+    }
+
+    @Override
+    public InstructionList visitProgram(Program program, Object arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitProgram'");
+    }
+
+    @Override
+    public InstructionList visitOverloadedMethod(OverloadedMethod overloadedMethod, Object arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitOverloadedMethod'");
+    }
+
+    @Override
+    public InstructionList visitInstanceOf(InstanceOfExpression instanceOfExpression, Object arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitInstanceOf'");
     }
     
 }

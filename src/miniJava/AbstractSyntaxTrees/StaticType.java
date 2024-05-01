@@ -1,6 +1,7 @@
 package miniJava.AbstractSyntaxTrees;
 
 import miniJava.SyntacticAnalyzer.SourcePosition;
+import miniJava.AbstractSyntaxTrees.MemberDecl.MemberType;
 import miniJava.ContextualAnalysis.TypeChecker.TypeError;
 //So, this is kind of un-java. In type checking, the differences between static and instance types have gotten really, 
 // really annoying.
@@ -51,15 +52,30 @@ public class StaticType extends TypeDenoter {
         //I think this is fine? I think this would only really be called in the case of like a static static type or 
         //a static type array Static<Class>[], neither of which should happen. Realistically this method should never be
         //called with allow_type false.
-        System.out.println(name.repr());
+        
         if (allow_type == false){
+            System.out.println(name.repr());
             throw new UnsupportedOperationException("I wonder what caused this?");
         }
         MemberDecl res = baseType.findMember(name, true);
+        if (res instanceof OverloadedMethod){
+            res = ((OverloadedMethod) res).staticMethods();
+        }
         if (res != null && !res.asDeclaration().isStatic()){
             throw new TypeError("Cannot statically access non-static member " + name.repr() + " of class " + baseType.repr());
         }
         return res;
+    }
+
+    public StaticType getSuperStaticType(){
+        if (typeDeclaration == null){
+            throw new UnsupportedOperationException();
+        }
+        if (typeDeclaration.superclass == null){
+            return null;
+        } else {
+            return StaticType.fromClass(typeDeclaration);
+        }
     }
     
 }

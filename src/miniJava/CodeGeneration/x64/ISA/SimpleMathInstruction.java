@@ -4,7 +4,10 @@ import java.util.Map;
 
 import miniJava.CodeGeneration.x64.Instruction;
 import miniJava.CodeGeneration.x64.RByte;
+import miniJava.CodeGeneration.x64.Reg64;
+import miniJava.CodeGeneration.x64.Reg8;
 import miniJava.CodeGeneration.x64.x64;
+import miniJava.CodeGeneration.x64.Reg.RegSize;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,12 +37,18 @@ public abstract class SimpleMathInstruction extends Instruction {
 			opcodeBytes.write(0x83);
 			x64.writeBytes(immBytes,modrmsibBytes);
 			immBytes.write(imm);
+		} else if (modrmsib.getSize() == RegSize.m8){
+			//1 byte instruction
+			opcodeBytes.write(0x80);
+			x64.writeBytes(immBytes, modrmsibBytes);
+			immBytes.write(imm);
 		} else {
 			opcodeBytes.write(0x81);
 			x64.writeBytes(immBytes,modrmsibBytes);
 			x64.writeInt(immBytes,imm);
 		}
 	}
+
 	
 	// manually specify rex
 	public SimpleMathInstruction(RByte modrmsib, int imm, boolean rexW, AST source) {

@@ -92,6 +92,15 @@ public class ASTDisplay implements Visitor<String,Object> {
 	//
 	/////////////////////////////////////////////////////////////////////////////// 
 
+    @Override
+    public Object visitProgram(Program program, String arg) {
+        // show(arg,program);
+        // arg = dot_indent(indent(arg));
+        // visitList(program.packages,arg,"PackageList");
+        return null;
+    }
+
+
     public Object visitPackage(Package prog, String arg){
         show(arg, prog);
         FileHeader fh = prog.header;
@@ -106,7 +115,7 @@ public class ASTDisplay implements Visitor<String,Object> {
     @Override
     public Object visitFileHeader(FileHeader header, String arg) {
         show(arg, header);
-        PackageDecl dec = header.packageDec;
+        PackageReference dec = header.packageDec;
         dec.visit(this,indent(arg));
         arg = indent(arg);
         show(arg,"Imports");
@@ -117,7 +126,7 @@ public class ASTDisplay implements Visitor<String,Object> {
     }
 
     @Override
-    public Object visitPackageDecl(PackageDecl decl, String arg) {
+    public Object visitPackageDecl(PackageReference decl, String arg) {
         show(arg,decl);
         // System.out.println(decl.packRef);
         String pack = decl.packRef.get(0).spelling;
@@ -130,12 +139,12 @@ public class ASTDisplay implements Visitor<String,Object> {
 
     @Override
     public Object visitImportStatement(ImportStatement imp, String arg) {
-        show (arg,imp);
-        String pack = imp.importRef.get(0).spelling;
-        for (int i = 1; i < imp.importRef.size(); i++){
-            pack += "." + imp.importRef.get(i).spelling;
-        }
-        show(indent(arg),quote(pack));
+        // show (arg,imp);
+        // String pack = imp.importRef.get(0).spelling;
+        // for (int i = 1; i < imp.importRef.size(); i++){
+        //     pack += "." + imp.importRef.get(i).spelling;
+        // }
+        // show(indent(arg),quote(pack));
         return null;
     }
 
@@ -877,10 +886,15 @@ public class ASTDisplay implements Visitor<String,Object> {
         return null;
     }
 
+    @Override
+    public Object visitOverloadedMethod(OverloadedMethod overloadedMethod, String arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitOverloadedMethod'");
+    }
 
-
-    
-
-    
-
+    @Override
+    public Object visitInstanceOf(InstanceOfExpression instanceOfExpression, String arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitInstanceOf'");
+    }
 }

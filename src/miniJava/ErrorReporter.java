@@ -19,15 +19,11 @@ public class ErrorReporter {
 		return !_errorQueue.isEmpty();
 	}
 	
-	public void outputErrors(boolean stackTrace) {
+	public void outputErrors() {
 		// TODO: output all errors in the errorQueue
 		for (CompilerError err : _errorQueue){
-			System.out.println(err.toString(stackTrace));
+			System.out.println(err.toString());
 		}
-	}
-
-	public void outputErrors(){
-		outputErrors(false);
 	}
 	
 	public void reportError(CompilerError e) {

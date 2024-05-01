@@ -2,6 +2,8 @@ package miniJava.CodeGeneration.x64;
 
 import java.io.ByteArrayOutputStream;
 
+import miniJava.CodeGeneration.x64.Reg.RegSize;
+
 public class RByte {
 	private ByteArrayOutputStream _b;
 	private boolean rexW = false;
@@ -46,7 +48,12 @@ public class RByte {
 	private Reg64 rdisp = null, ridx = null;
 	private Reg rm = null, r = null;
 	private int disp = 0, mult = 0;
+	private RegSize size;
 	
+	public RegSize getSize() {
+		return size;
+	}
+
 	// [rdisp+ridx*mult+disp],r32/64
 	public RByte(Reg64 rdisp, Reg64 ridx, int mult, int disp, Reg r) {
 		SetRegR(r);
@@ -80,13 +87,13 @@ public class RByte {
 	}
 	
 	// rm64,r64
-	public RByte(Reg64 rm, Reg r) {
+	public RByte(Reg rm, Reg r) {
 		SetRegRM(rm);
 		SetRegR(r);
 	}
 	
 	// rm or r
-	public RByte(Reg64 r_or_rm, boolean isRm) {
+	public RByte(Reg r_or_rm, boolean isRm) {
 		if( isRm )
 			SetRegRM(r_or_rm);
 		else
@@ -100,6 +107,16 @@ public class RByte {
 	
 	//public RByte() {
 	//}
+
+	public void setSize(Reg r){
+		if (size == null){
+			size = r.getSize();
+		} else {
+			if (size != r.getSize()){
+				throw new IllegalArgumentException("R and RM must be the same register size!");
+			}
+		}
+	}
 	
 	public void SetRegRM(Reg rm) {
 		if( rm.getIdx() > 7 ) rexB = true;
@@ -131,21 +148,21 @@ public class RByte {
 		this.mult = mult;
 	}
 	
-	public boolean IsRegR_R8() {
-		return r instanceof Reg8;
-	}
+	// public boolean IsRegR_R8() {
+	// 	return r instanceof Reg8;
+	// }
 	
-	public boolean IsRegR_R64() {
-		return r instanceof Reg64;
-	}
+	// public boolean IsRegR_R64() {
+	// 	return r instanceof Reg64;
+	// }
 	
-	public boolean IsRegRM_R8() {
-		return rm instanceof Reg8;
-	}
+	// public boolean IsRegRM_R8() {
+	// 	return rm instanceof Reg8;
+	// }
 	
-	public boolean IsRegRM_R64() {
-		return rm instanceof Reg64;
-	}
+	// public boolean IsRegRM_R64() {
+	// 	return rm instanceof Reg64;
+	// }
 
 	public int RMByte(int mod, Reg r, Reg rm){ //different order to match byte order - IMPORTANT!
 		return ( mod << 6 ) | ( getIdx(r) << 3 ) | getIdx(rm);

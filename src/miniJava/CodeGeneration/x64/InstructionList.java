@@ -97,4 +97,8 @@ public class InstructionList {
 			i.final_patch(this);
 		}
     }
+
+    public Instruction first() {
+        return get(0);
+    }
 }

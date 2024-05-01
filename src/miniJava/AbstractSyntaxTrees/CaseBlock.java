@@ -6,7 +6,7 @@ import miniJava.SyntacticAnalyzer.SourcePosition;
 
 public class CaseBlock extends AST {
 
-    public Terminal literal; //identifier or literal
+    public Terminal literal; //identifier (enum), literal (target), or null (default)
     public List<Statement> caseBody;
     public CaseBlock nextBlock; //potentially null!
 

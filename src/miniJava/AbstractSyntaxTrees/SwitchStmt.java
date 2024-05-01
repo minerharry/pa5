@@ -3,6 +3,8 @@ package miniJava.AbstractSyntaxTrees;
 import miniJava.SyntacticAnalyzer.SourcePosition;
 
 public class SwitchStmt extends Statement {
+    
+
     public SwitchStmt(Expression switchTarget, CaseBlock firstCase, int numCases, SourcePosition posn) {
         super(posn);
         this.target = switchTarget;
@@ -23,5 +25,16 @@ public class SwitchStmt extends Statement {
     public String repr() {
         return "Switch statement with " + numCases + " cases at position " + posn;
     }
+
+    //decoration after type checking -
+    public static enum SwitchType {
+        STRING,
+        ENUM,
+        INT,
+        CHAR
+    }
+
+    public SwitchType switchType;
+
     
 }

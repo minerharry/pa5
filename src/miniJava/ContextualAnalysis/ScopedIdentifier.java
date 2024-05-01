@@ -1,9 +1,10 @@
 package miniJava.ContextualAnalysis;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import miniJava.Compiler;
 import miniJava.CompilerError;
@@ -48,6 +49,7 @@ import miniJava.AbstractSyntaxTrees.IdentifierType;
 import miniJava.AbstractSyntaxTrees.IfStmt;
 import miniJava.AbstractSyntaxTrees.ImportStatement;
 import miniJava.AbstractSyntaxTrees.IncExpr;
+import miniJava.AbstractSyntaxTrees.InstanceOfExpression;
 import miniJava.AbstractSyntaxTrees.Kwarg;
 import miniJava.AbstractSyntaxTrees.KwargList;
 import miniJava.AbstractSyntaxTrees.IntLiteral;
@@ -64,10 +66,12 @@ import miniJava.AbstractSyntaxTrees.NewArrayExpr;
 import miniJava.AbstractSyntaxTrees.NewObjectExpr;
 import miniJava.AbstractSyntaxTrees.NullLiteral;
 import miniJava.AbstractSyntaxTrees.Operator;
+import miniJava.AbstractSyntaxTrees.OverloadedMethod;
 import miniJava.AbstractSyntaxTrees.Package;
-import miniJava.AbstractSyntaxTrees.PackageDecl;
+import miniJava.AbstractSyntaxTrees.PackageReference;
 import miniJava.AbstractSyntaxTrees.ParameterDecl;
 import miniJava.AbstractSyntaxTrees.PrimitiveType;
+import miniJava.AbstractSyntaxTrees.Program;
 import miniJava.AbstractSyntaxTrees.Protection;
 import miniJava.AbstractSyntaxTrees.QualType;
 import miniJava.AbstractSyntaxTrees.ReturnStmt;
@@ -166,19 +170,21 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
         return res;
     }
 
-    public void identifyProgram(AST prog){
+    public void identifyProgram(Package prog){
         table = new IDTable();
         prog.visit(this, new IdentificationContext(null));
     }
 
-    public void addBuiltins(Package prog){
+    public void injectStandardLib(Package proj){
+        List<ClassMemberDecl> classes = new ArrayList<>();
+
         //add default imports
         //String class
         ClassDecl strDecl = 
         new ClassDecl(
             new DeclKeywords(), 
             new Identifier(new Token(TokenType.id,"String",null)), 
-            null, 
+            new ArrayList<GenericVar>(),
             new ArrayList<FieldDecl>(), 
             new ArrayList<MethodDecl>(),
             new ArrayList<ConstructorDecl>(),
@@ -186,7 +192,7 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
             null,
             new ArrayList<TypeDenoter>(),
                 null);
-        addDeclaration(strDecl.name, strDecl);
+        classes.add(strDecl);    
         
         //System.out.println
         //making: 
@@ -223,13 +229,14 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
         methods.add(printDecl);
         ClassDecl streamDecl = new ClassDecl(
             new DeclKeywords(), 
-            Identifier.makeDummy("_PrintStream"), 
+            Identifier.makeDummy("PrintStream"), 
             new ArrayList<>(), 
             new ArrayList<>(), 
             methods, new ArrayList<>(), new ArrayList<>(), null, new ArrayList<>(), null);
+        classes.add(streamDecl);
         
         List<FieldDecl> fieldDecls = new ArrayList<>();
-        Identifier printRef = Identifier.makeDummy("_PrintStream");
+        Identifier printRef = Identifier.makeDummy("PrintStream");
         IdentifierType printType = new IdentifierType(printRef);
         printRef.refDecl = streamDecl;
         DeclKeywords outKeywords = new DeclKeywords();
@@ -250,22 +257,40 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
             null, 
             new ArrayList<>(), 
             null);
+        classes.add(sysDecl);
 
-        prog.classes.add(sysDecl);
-        prog.classes.add(streamDecl);
+        proj.classes.addAll(classes);
 
     }
 
+    // @Override
+    // public Object visitProgram(Program program, IdentificationContext arg) {
+    //     Package stdlib = makeStandardLib();
+    //     program.packages.addPackage(stdlib);
 
+    //     Map<PackageReference,Package> packMap = new HashMap<PackageReference,Package>();
+    //     for (Package p : program.packages){
+    //         packMap.put(p.header.packageDec, p);
+    //     }
+
+    //     //now: identify imports; qualified imports evaluated through type checking
+    //     for (Package p : program.packages){
+    //         p.header.imports.add(stdlib.makeImportAll());
+    //         for (ImportStatement is : p.header.imports){
+    //             if (packMap.containsKey(is.packRef)){
+    //                 is.referredPackage = packMap.get(is.packRef);
+    //             }
+    //         }
+    //     }
+        
+    //     // TODO Auto-generated method stub
+    //     throw new UnsupportedOperationException("Unimplemented method 'visitProgram'");
+    // }
 
     @Override
     public Object visitPackage(Package prog, IdentificationContext arg) {
         openScope(true);
-        addBuiltins(prog);
-
-        //make sure the global types are identified to the right place
-        TypeResult.STRING.getType().visit(this,arg);
-        TypeResult.STRINGARR.getType().visit(this,arg);
+        injectStandardLib(prog);
 
         if (prog.header != null){
             prog.header.visit(this,arg); //add import declarations
@@ -275,6 +300,11 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
         for (ClassMemberDecl cmd : prog.classes){
             addDeclaration(cmd.name, cmd);
         }
+
+        //make sure the global types are identified to the right place
+        TypeResult.STRING.getType().visit(this,arg);
+        TypeResult.STRINGARR.getType().visit(this,arg);
+        
 
         //visit classes
         for (ClassMemberDecl cmd : prog.classes){
@@ -291,28 +321,38 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
     }
 
     @Override
-    public Object visitPackageDecl(PackageDecl packageDecl, IdentificationContext arg) {
+    public Object visitPackageDecl(PackageReference packageDecl, IdentificationContext arg) {
         //TODO: implement file linking?
         throw new UnsupportedOperationException("Unimplemented method 'visitPackageDecl'");
     }
 
     @Override
     public Object visitImportStatement(ImportStatement is, IdentificationContext arg) {
-        if (is.importAll){
-            //file linking not supported so... do nothing I guess. Would need to go to the package and add every thing
-        } else {
-            Identifier importFinal = is.importRef.get(is.importRef.size()-1);
-            //file linking not supported yet so I guess just add a dummy declaration?
-            ClassDecl dummy = new ClassDecl(null, importFinal, null, null, null, null, null, null, null, null);
-            addDeclaration(importFinal, dummy);
-        }
+        Identifier importFinal = is.name;
+        //file linking not supported yet so I guess just add a dummy declaration?
+        ClassDecl dummy = new ClassDecl(null, importFinal, null, null, null, null, null, null, null, null);
+        addDeclaration(importFinal, dummy);
         return null;
     }
 
 
+    public void mergeMethods(ClassMemberDecl cmd){
+        Map<String,MethodDecl> m = new HashMap<String,MethodDecl>();
+        for(MethodDecl meth : cmd.methods){
+            if (m.containsKey(meth.name.spelling)){
+                OverloadedMethod<MethodDecl> om = new OverloadedMethod<MethodDecl>(meth, meth.posn);
+                om.add(m.get(meth.name.spelling));
+                m.put(meth.name.spelling,om);
+            }
+        }
+        cmd.methods = new ArrayList<>();
+        cmd.methods.addAll(m.values());
+    }
+    
     public void addClassMembers(Iterable<ClassMemberDecl> cmds){
         for (ClassMemberDecl cmd : cmds) addDeclaration(cmd.name, cmd);
     }
+    
 
     public void addMethods(Iterable<MethodDecl> methods){
         for (MethodDecl md : methods) addDeclaration(md.name, md);
@@ -327,6 +367,7 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
             addDeclaration(gv.name, gv);
         }
     }
+
 
     @Override
     public Object visitClassDecl(ClassDecl cd, IdentificationContext arg) {
@@ -372,6 +413,12 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
         addConstructors(ed.constructors);
         addMethods(ed.methods);
         
+        int idx = 0;
+        for (EnumElement el : ed.elements){
+            el.enumIndex = idx;
+            idx++;
+        }
+
         visitList(ed.elements,arg); //enum elements work the same way as fields, are parsed and identified in order
         visitList(ed.fields,arg);
 
@@ -760,6 +807,7 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
     }
 
 
+
     @Override
     public Object visitIdentifier(Identifier id, IdentificationContext arg) {
         DeclarationHit hit = findDeclarationThrow(id,arg.allow_type);
@@ -927,9 +975,22 @@ public class ScopedIdentifier implements Visitor<IdentificationContext,Object> {
         return null;
     }
 
-    
+    @Override
+    public Object visitProgram(Program program, IdentificationContext arg) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'visitProgram'");
+    }
 
-    
+    @Override
+    public Object visitOverloadedMethod(OverloadedMethod overloadedMethod, IdentificationContext arg) {
+        visitList(overloadedMethod.methods, arg);
+        return null;
+    }
 
-    
+    @Override
+    public Object visitInstanceOf(InstanceOfExpression expr, IdentificationContext arg) {
+        expr.expr.visit(this,arg);
+        expr.type.visit(this,arg);
+        return null;
+    }    
 }

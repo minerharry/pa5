@@ -6,10 +6,10 @@ import miniJava.SyntacticAnalyzer.SourcePosition;
 
 public class FileHeader extends AST {
 
-    public PackageDecl packageDec;
+    public PackageReference packageDec;
     public List<ImportStatement> imports;
     
-    public FileHeader(PackageDecl packName, List<ImportStatement> imports) {
+    public FileHeader(PackageReference packName, List<ImportStatement> imports) {
         super(packName.posn);
         packageDec = packName;
         this.imports = imports;
@@ -23,6 +23,10 @@ public class FileHeader extends AST {
     @Override
     public String repr() {
         return "File Header at position " + posn;
+    }
+
+    public String getFullName() {
+        return packageDec.getFullName();
     }
     
 }

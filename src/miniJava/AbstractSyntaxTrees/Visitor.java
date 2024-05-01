@@ -22,10 +22,13 @@ public interface Visitor<ArgType,ResultType> {
       return rs;
     }
 
+  // Program
+    public ResultType visitProgram(Program program, ArgType arg);
+
   // Package
     public ResultType visitPackage(Package prog, ArgType arg);
     public ResultType visitFileHeader(FileHeader fileHeader, ArgType arg);
-    public ResultType visitPackageDecl(PackageDecl packageDecl, ArgType arg);
+    public ResultType visitPackageDecl(PackageReference packageDecl, ArgType arg);
     public ResultType visitImportStatement(ImportStatement importStatement, ArgType arg);
 
   // Declarations
@@ -105,5 +108,9 @@ public interface Visitor<ArgType,ResultType> {
     public ResultType visitNullLiteral(NullLiteral literal, ArgType arg);
 
     public ResultType visitSyscallStmt(SyscallStmt syscallStmt, ArgType arg);
+
+    public ResultType visitOverloadedMethod(OverloadedMethod overloadedMethod, ArgType arg);
+
+    public ResultType visitInstanceOf(InstanceOfExpression instanceOfExpression, ArgType arg);
     
 }

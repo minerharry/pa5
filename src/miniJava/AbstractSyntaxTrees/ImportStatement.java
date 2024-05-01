@@ -4,14 +4,12 @@ import java.util.List;
 
 import miniJava.SyntacticAnalyzer.SourcePosition;
 
-public class ImportStatement extends AST {
+public class ImportStatement extends Declaration {
 
-    public List<Identifier> importRef;
-    public boolean importAll;
-    public ImportStatement(List<Identifier> importReference, boolean isStar, SourcePosition posn) {
-        super(posn);
-        importRef = importReference;
-        importAll = isStar;
+    public PackageReference packRef; //package this is referring to 
+    public ImportStatement(List<Identifier> importReference, SourcePosition posn) {
+        super(new DeclKeywords(), null, importReference.get(importReference.size()-1), posn);
+        packRef = new PackageReference(importReference, posn);
     }
 
     @Override
@@ -23,5 +21,8 @@ public class ImportStatement extends AST {
     public String repr() {
         return "Import statement at position " + posn;
     }
+
+    //DECORATED DURING IDENTIFICATION
+    public Package referredPackage;
     
 }

@@ -2,16 +2,17 @@ package miniJava.AbstractSyntaxTrees;
 
 import java.util.List;
 
+import miniJava.ContextualAnalysis.TypeResult;
 import miniJava.SyntacticAnalyzer.SourcePosition;
 
-public class ConstructorDecl extends Declaration implements MemberDecl {
+public class ConstructorDecl extends MethodDecl {
 
     public ConstructorDecl(DeclKeywords keywords, Identifier name, List<ParameterDecl> pl, List<Statement> sl,
             List<TypeDenoter> throwables, SourcePosition posn) {
-        super(keywords,null,name,posn);
-        parameters = pl;
-        statementList = sl;
-        throwsList = throwables;
+        super(keywords, null, TypeResult.VOID.getType(), name, pl, sl, throwables, posn);
+        // parameters = pl;
+        // statementList = sl;
+        // throwsList = throwables;
     }
 
     @Override
@@ -19,9 +20,9 @@ public class ConstructorDecl extends Declaration implements MemberDecl {
         return v.visitConstructorDecl(this,o);
     }
 
-	public List<ParameterDecl> parameters;
-	public List<Statement> statementList;
-    public List<TypeDenoter> throwsList;
+	// public List<ParameterDecl> parameters;
+	// public List<Statement> statementList;
+    // public List<TypeDenoter> throwsList;
     @Override
     public MemberType getMemberType() {
         return MemberType.CONSTRUCTOR;
@@ -45,17 +46,5 @@ public class ConstructorDecl extends Declaration implements MemberDecl {
     @Override
     public String repr() {
         return "Constructor Declaration for class " + name.spelling + "; " + parameters.size() + " parameters, " + statementList.size() + " statements, at position" + posn;
-    }
-
-    private ClassMemberDecl enclosing;
-	@Override
-	public ClassMemberDecl enclosingDecl() {
-		return enclosing;
-	}
-
-	@Override
-	public void setEnclosingDecl(ClassMemberDecl cmd) {
-		enclosing = cmd;
-	}
-    
+    }    
 }

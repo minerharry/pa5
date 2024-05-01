@@ -37,17 +37,13 @@ public class Parser {
 			super(message + "; Token `" + sourceT.getTokenText() + "` at " + sourceT.getTokenPosition());
 		}
 
-		public SyntaxError(String message, SourcePosition posn, String file, int line) {
-			super(message + "; at " + posn, file, line);
-		}
-
 		// private static final long serialVersionUID = -6461942006097999362L;
 	}
 	
 	public Package parse() {
 		try {
 			// The first thing we need to parse is the Program symbol
-			return parseProgram();
+			return parsePackage();
 		} catch( SyntaxError e ) { 
 			this._errors.reportError(e);
 			return null;
@@ -55,7 +51,7 @@ public class Parser {
 	}
 	
 	// Program ::= (ClassDeclaration)* eot
-	private Package parseProgram() throws SyntaxError {
+	private Package parsePackage() throws SyntaxError {
 		SourcePosition startpos = _currentToken.getTokenPosition();
 		FileHeader head = null;
 		if (!Compiler.IS_MINI){
@@ -78,7 +74,7 @@ public class Parser {
 		while (acceptOptional(TokenType.dot) != null){
 			packIds.add(new Identifier(accept(TokenType.id)));
 		}
-		PackageDecl pack = new PackageDecl(packIds,packageToken.getTokenPosition());
+		PackageReference pack = new PackageReference(packIds,packageToken.getTokenPosition());
 		
 		accept(TokenType.semicolon);
 		
@@ -93,14 +89,18 @@ public class Parser {
 				Token star = acceptOptional(TokenType.binOp);
 				if (star != null && star.getTokenText().equals("*")){
 					isStar = true;
+
 					break;
 				} else if (star != null){
 					throw err(new SyntaxError("Unexpected token: " + star,star));
 				}
 				ids.add(new Identifier(accept(TokenType.id)));
 			}
+			if (isStar){
+				throw new SyntaxError("Star syntax not allowed in my java it's very annoying", importToken);
+			}
 
-			imports.add(new ImportStatement(ids, isStar, importToken.getTokenPosition()));
+			imports.add(new ImportStatement(ids, importToken.getTokenPosition()));
 			accept(TokenType.semicolon);
 		}
 		return new FileHeader(pack, imports);
@@ -1066,6 +1066,9 @@ public class Parser {
 							opExpression = new DotExpr(opExpression,name);
 						}
 					} else {
+						if (op.getTokenType() == TokenType.instanceOfKeyword){
+							opExpression = new InstanceOfExpression(opExpression,parseType(),startpos);
+						}
 						opExpression = new BinaryExpr(new Operator(op), opExpression, parseExpression(allow_array_literal,p.up1()),startpos);
 					}
 					hit = true;
